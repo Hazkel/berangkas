@@ -35,6 +35,9 @@ jobs:
               -o gradle/wrapper/gradle-wrapper.jar
           fi
 
+      - name: Make Gradle Wrapper executable
+        run: chmod +x gradlew
+
       - name: Validate Gradle Wrapper
         uses: gradle/actions/wrapper-validation@v4
 
