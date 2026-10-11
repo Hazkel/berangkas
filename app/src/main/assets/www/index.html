@@ -9,20 +9,25 @@
     <meta name="theme-color" content="#121417">
     <title>Berangkas</title>
     <link rel="stylesheet" href="style.css">
-
-    <script>
-        (function () {
-            try {
-                if (window.AndroidApp && window.AndroidApp.isPinEnabled()) {
-                    document.documentElement.classList.add("pin-required");
-                }
-            } catch (error) {
-                document.documentElement.classList.add("pin-check-failed");
-            }
-        })();
-    </script>
 </head>
 <body>
+    <section id="startupScreen" class="startup-screen">
+        <div class="startup-card">
+            <div class="lock-icon" aria-hidden="true">🔒</div>
+            <h1>Menyiapkan Berangkas</h1>
+            <p id="startupMessage" aria-live="polite">
+                Menghubungkan ke aplikasi...
+            </p>
+            <button
+                id="btnRetryStartup"
+                class="primary-btn is-hidden"
+                type="button"
+            >
+                Coba lagi
+            </button>
+        </div>
+    </section>
+
     <section id="lockScreen" class="lock-screen is-hidden">
         <div class="lock-card">
             <div class="lock-icon" aria-hidden="true">🔒</div>
@@ -48,7 +53,7 @@
         </div>
     </section>
 
-    <div id="appShell">
+    <div id="appShell" class="is-hidden">
         <header class="app-header">
             <div class="brand">
                 <span class="icon" aria-hidden="true">🔒</span>
@@ -86,7 +91,11 @@
                     Silakan pilih folder penyimpanan Anda.
                 </p>
 
-                <button id="btnPickFolder" class="primary-btn" type="button">
+                <button
+                    id="btnPickFolder"
+                    class="primary-btn"
+                    type="button"
+                >
                     📁 Pilih Folder Berangkas
                 </button>
 
@@ -162,7 +171,11 @@
             <div id="modalBody" class="modal-body"></div>
 
             <div class="modal-footer">
-                <button id="btnOpenExternal" class="secondary-btn" type="button">
+                <button
+                    id="btnOpenExternal"
+                    class="secondary-btn"
+                    type="button"
+                >
                     Buka di Aplikasi Lain
                 </button>
             </div>
@@ -245,7 +258,11 @@
                         aria-live="polite"
                     ></p>
 
-                    <button id="btnSavePin" class="primary-btn" type="button">
+                    <button
+                        id="btnSavePin"
+                        class="primary-btn"
+                        type="button"
+                    >
                         Simpan PIN
                     </button>
                     <button

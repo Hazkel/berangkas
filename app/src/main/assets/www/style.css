@@ -35,18 +35,9 @@ button {
 .is-hidden,
 .hidden,
 .lock-screen.is-hidden,
-.modal.hidden {
+.modal.hidden,
+.startup-screen.is-hidden {
     display: none !important;
-}
-
-html.pin-required #appShell,
-html.pin-check-failed #appShell {
-    display: none !important;
-}
-
-html.pin-required #lockScreen,
-html.pin-check-failed #lockScreen {
-    display: flex !important;
 }
 
 .sr-only {
@@ -472,7 +463,8 @@ button:focus-visible {
     background: #121417;
 }
 
-.lock-card {
+.lock-card,
+.startup-card {
     width: 100%;
     max-width: 360px;
     padding: 24px;
@@ -487,13 +479,15 @@ button:focus-visible {
     font-size: 2rem;
 }
 
-.lock-card h1 {
-    margin-bottom: 6px;
+.lock-card h1,
+.startup-card h1 {
+    margin-bottom: 8px;
     color: #38bdf8;
     font-size: 1.25rem;
 }
 
-.lock-card p {
+.lock-card p,
+.startup-card p {
     margin-bottom: 14px;
     color: #94a3b8;
     font-size: 0.9rem;
@@ -501,4 +495,13 @@ button:focus-visible {
 
 .lock-card .primary-btn {
     margin-top: 8px;
+}
+
+.startup-screen {
+    display: flex;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: #121417;
 }
