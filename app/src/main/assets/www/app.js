@@ -1,6 +1,7 @@
 (function () {
     "use strict";
 
+    var MAX_TEXT_PREVIEW_SIZE = 10 * 1024 * 1024;
     var files = [];
     var selectedFolderUri = "";
     var selectedCategory = "gambar";
@@ -8,11 +9,12 @@
     var thumbnailCache = Object.create(null);
     var elements = {};
 
-    var VIDEO_EXTENSIONS = [
-        "mp4", "m4v", "3gp", "webm", "mkv", "mov", "avi", "mpeg", "mpg"
-    ];
     var IMAGE_EXTENSIONS = [
         "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif"
+    ];
+
+    var VIDEO_EXTENSIONS = [
+        "mp4", "m4v", "3gp", "webm", "mkv", "mov", "avi", "mpeg", "mpg"
     ];
 
     function byId(id) {
@@ -24,11 +26,17 @@
     }
 
     function showToast(message) {
-        if (bridgeAvailable() && typeof window.AndroidApp.showToast === "function") {
-            window.AndroidApp.showToast(message);
-        } else {
-            console.log(message);
+        if (bridgeAvailable() &&
+                typeof window.AndroidApp.showToast === "function") {
+            try {
+                window.AndroidApp.showToast(message);
+                return;
+            } catch (error) {
+                console.warn("Gagal menampilkan notifikasi Android.", error);
+            }
         }
+
+        console.log(message);
     }
 
     function extensionOf(name) {
@@ -67,20 +75,25 @@
         if (!Number.isFinite(size) || size < 0) {
             return "Ukuran tidak diketahui";
         }
+
         if (size < 1024) {
             return size + " B";
         }
+
         if (size < 1024 * 1024) {
             return (size / 1024).toFixed(1) + " KB";
         }
+
         if (size < 1024 * 1024 * 1024) {
             return (size / (1024 * 1024)).toFixed(1) + " MB";
         }
+
         return (size / (1024 * 1024 * 1024)).toFixed(1) + " GB";
     }
 
     function normalizeFiles(raw) {
         var parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+
         if (!Array.isArray(parsed)) {
             throw new Error("Respons daftar file bukan array.");
         }
@@ -88,7 +101,9 @@
         return parsed.map(function (item) {
             return {
                 name: item && item.name ? String(item.name) : "Tanpa nama",
-                size: item && Number.isFinite(Number(item.size)) ? Number(item.size) : 0,
+                size: item && Number.isFinite(Number(item.size))
+                    ? Number(item.size)
+                    : 0,
                 isDirectory: Boolean(item && item.isDirectory),
                 type: item && item.type ? String(item.type) : "unknown",
                 uri: item && item.uri ? String(item.uri) : ""
@@ -99,6 +114,7 @@
             if (a.isDirectory !== b.isDirectory) {
                 return a.isDirectory ? -1 : 1;
             }
+
             return a.name.localeCompare(b.name);
         });
     }
@@ -109,7 +125,7 @@
         try {
             location = decodeURIComponent(uri);
         } catch (error) {
-            // Gunakan URI apa adanya jika tidak dapat didekode.
+            // Gunakan URI aslinya jika tidak dapat didekode.
         }
 
         var marker = location.indexOf("/tree/");
@@ -120,16 +136,42 @@
         location = location.replace(/^primary:/i, "Penyimpanan internal / ");
         location = location.replace(/^home:/i, "Folder Home / ");
 
-        return location && location.indexOf("content://") !== 0
-            ? "Lokasi: " + location
-            : "Folder penyimpanan sudah dipilih.";
+        if (!location || location.indexOf("content://") === 0) {
+            return "Folder penyimpanan sudah dipilih.";
+        }
+
+        return "Lokasi: " + location;
     }
 
     function setFolderStatus(selected, text) {
-        elements.folderStatus.textContent = selected ? "Terhubung" : "Belum dipilih";
+        elements.folderStatus.textContent = selected
+            ? "Terhubung"
+            : "Belum dipilih";
         elements.folderStatus.className =
             "badge " + (selected ? "selected" : "not-selected");
         elements.folderPathDisplay.textContent = text;
+    }
+
+    function imageMimeFor(file) {
+        var mime = (file.type || "").toLowerCase();
+
+        if (mime.indexOf("image/") === 0) {
+            return mime;
+        }
+
+        var extension = extensionOf(file.name);
+        var mimeByExtension = {
+            jpg: "image/jpeg",
+            jpeg: "image/jpeg",
+            png: "image/png",
+            gif: "image/gif",
+            webp: "image/webp",
+            bmp: "image/bmp",
+            heic: "image/heic",
+            heif: "image/heif"
+        };
+
+        return mimeByExtension[extension] || "image/jpeg";
     }
 
     function thumbnailFor(file) {
@@ -141,21 +183,24 @@
             return thumbnailCache[file.uri];
         }
 
-        var result = "";
+        var thumbnail = "";
+
         try {
             if (categoryOf(file) === "gambar" &&
                     typeof window.AndroidApp.getImageThumbnailBase64 === "function") {
-                result = window.AndroidApp.getImageThumbnailBase64(file.uri) || "";
+                thumbnail =
+                    window.AndroidApp.getImageThumbnailBase64(file.uri) || "";
             } else if (categoryOf(file) === "video" &&
                     typeof window.AndroidApp.getVideoThumbnailBase64 === "function") {
-                result = window.AndroidApp.getVideoThumbnailBase64(file.uri) || "";
+                thumbnail =
+                    window.AndroidApp.getVideoThumbnailBase64(file.uri) || "";
             }
         } catch (error) {
-            result = "";
+            console.warn("Gagal membuat thumbnail.", error);
         }
 
-        thumbnailCache[file.uri] = result;
-        return result;
+        thumbnailCache[file.uri] = thumbnail;
+        return thumbnail;
     }
 
     function makeThumbnail(file) {
@@ -166,15 +211,15 @@
             wrapper.className = "video-thumbnail";
 
             if (base64) {
-                var image = document.createElement("img");
-                image.alt = "";
-                image.src = "data:image/jpeg;base64," + base64;
-                wrapper.appendChild(image);
+                var videoImage = document.createElement("img");
+                videoImage.alt = "";
+                videoImage.src = "data:image/jpeg;base64," + base64;
+                wrapper.appendChild(videoImage);
             } else {
-                var fallback = document.createElement("span");
-                fallback.className = "file-icon";
-                fallback.textContent = "🎬";
-                wrapper.appendChild(fallback);
+                var videoFallback = document.createElement("span");
+                videoFallback.className = "file-icon";
+                videoFallback.textContent = "🎬";
+                wrapper.appendChild(videoFallback);
             }
 
             var playIcon = document.createElement("span");
@@ -185,11 +230,11 @@
         }
 
         if (base64) {
-            var thumbnail = document.createElement("img");
-            thumbnail.className = "thumbnail";
-            thumbnail.alt = "";
-            thumbnail.src = "data:image/jpeg;base64," + base64;
-            return thumbnail;
+            var image = document.createElement("img");
+            image.className = "thumbnail";
+            image.alt = "";
+            image.src = "data:" + imageMimeFor(file) + ";base64," + base64;
+            return image;
         }
 
         var imageFallback = document.createElement("span");
@@ -222,25 +267,25 @@
         }
 
         var query = elements.searchInput.value.trim().toLowerCase();
-        var inCategory = files.filter(function (file) {
+        var categoryFiles = files.filter(function (file) {
             return categoryOf(file) === selectedCategory;
         });
-        var visible = inCategory.filter(function (file) {
+        var visibleFiles = categoryFiles.filter(function (file) {
             return file.name.toLowerCase().indexOf(query) !== -1;
         });
 
         elements.fileCount.textContent = query
-            ? visible.length + " dari " + inCategory.length + " item"
-            : inCategory.length + (inCategory.length === 1 ? " item" : " item");
+            ? visibleFiles.length + " dari " + categoryFiles.length + " item"
+            : categoryFiles.length + " item";
 
-        if (visible.length === 0) {
+        if (visibleFiles.length === 0) {
             appendEmpty(query
                 ? "Tidak ada item yang cocok dengan pencarian di kategori ini."
                 : "Belum ada item di kategori ini.");
             return;
         }
 
-        visible.forEach(function (file) {
+        visibleFiles.forEach(function (file) {
             var item = document.createElement("li");
             item.className = "file-item";
             item.tabIndex = 0;
@@ -275,6 +320,7 @@
             item.addEventListener("click", function () {
                 openPreview(file);
             });
+
             item.addEventListener("keydown", function (event) {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
@@ -288,14 +334,16 @@
 
     function isTextFile(file) {
         var mime = (file.type || "").toLowerCase();
-        var textExtensions = [
+        var extensions = [
             "txt", "md", "csv", "json", "xml", "html", "htm",
             "js", "css", "log", "ini", "yaml", "yml", "java",
             "kt", "py", "sql"
         ];
 
         return mime.indexOf("text/") === 0 ||
-            textExtensions.indexOf(extensionOf(file.name)) !== -1;
+            mime === "application/json" ||
+            mime === "application/xml" ||
+            extensions.indexOf(extensionOf(file.name)) !== -1;
     }
 
     function decodeBase64Text(base64) {
@@ -306,7 +354,7 @@
             bytes[i] = binary.charCodeAt(i);
         }
 
-        if (window.TextDecoder) {
+        if (typeof window.TextDecoder !== "undefined") {
             return new window.TextDecoder("utf-8").decode(bytes);
         }
 
@@ -324,6 +372,7 @@
 
     function showPreviewMessage(message) {
         clearElement(elements.modalBody);
+
         var text = document.createElement("p");
         text.textContent = message;
         elements.modalBody.appendChild(text);
@@ -340,50 +389,89 @@
         elements.previewModal.classList.remove("hidden");
         clearElement(elements.modalBody);
 
+        if (!bridgeAvailable()) {
+            showPreviewMessage("Fitur pratinjau hanya tersedia di aplikasi Android.");
+            return;
+        }
+
         if (categoryOf(file) === "video") {
             var videoThumbnail = thumbnailFor(file);
 
             if (videoThumbnail) {
-                var image = document.createElement("img");
-                image.alt = "Sampul " + file.name;
-                image.src = "data:image/jpeg;base64," + videoThumbnail;
-                elements.modalBody.appendChild(image);
+                var cover = document.createElement("img");
+                cover.alt = "Sampul " + file.name;
+                cover.src = "data:image/jpeg;base64," + videoThumbnail;
+                elements.modalBody.appendChild(cover);
             } else {
-                showPreviewMessage("Sampul video tidak dapat dibuat. Gunakan tombol di bawah untuk membuka video.");
+                showPreviewMessage(
+                    "Sampul video tidak tersedia. Anda masih dapat mencoba membukanya di aplikasi lain."
+                );
             }
             return;
         }
 
         if (categoryOf(file) === "gambar") {
-            var imageBase64 = window.AndroidApp.readFileBase64(file.uri);
-            if (!imageBase64) {
-                showPreviewMessage("Gambar tidak dapat dibaca. Coba buka dengan aplikasi lain.");
+            if (file.size > MAX_TEXT_PREVIEW_SIZE) {
+                var imageThumbnail = thumbnailFor(file);
+
+                if (imageThumbnail) {
+                    var largeImage = document.createElement("img");
+                    largeImage.alt = file.name;
+                    largeImage.src =
+                        "data:" + imageMimeFor(file) + ";base64," + imageThumbnail;
+                    elements.modalBody.appendChild(largeImage);
+                } else {
+                    showPreviewMessage(
+                        "Gambar terlalu besar untuk pratinjau penuh dan thumbnail gagal dibuat."
+                    );
+                }
                 return;
             }
 
-            var preview = document.createElement("img");
-            preview.alt = file.name;
-            preview.src = "data:" +
-                (file.type.indexOf("image/") === 0 ? file.type : "image/jpeg") +
-                ";base64," + imageBase64;
-            elements.modalBody.appendChild(preview);
-            return;
-        }
+            try {
+                var imageBase64 = window.AndroidApp.readFileBase64(file.uri);
+                if (!imageBase64 && file.size > 0) {
+                    showPreviewMessage(
+                        "Gambar tidak dapat dibaca. Coba buka dengan aplikasi lain."
+                    );
+                    return;
+                }
 
-        if (isTextFile(file) && file.size <= 10 * 1024 * 1024) {
-            var textBase64 = window.AndroidApp.readFileBase64(file.uri);
-            if (!textBase64 && file.size > 0) {
-                showPreviewMessage("File tidak dapat dibaca. Coba buka dengan aplikasi lain.");
-                return;
+                var previewImage = document.createElement("img");
+                previewImage.alt = file.name;
+                previewImage.src =
+                    "data:" + imageMimeFor(file) + ";base64," + imageBase64;
+                elements.modalBody.appendChild(previewImage);
+            } catch (error) {
+                console.error("Gagal membaca gambar.", error);
+                showPreviewMessage("Gagal membaca gambar.");
             }
-
-            var pre = document.createElement("pre");
-            pre.textContent = decodeBase64Text(textBase64);
-            elements.modalBody.appendChild(pre);
             return;
         }
 
-        showPreviewMessage("Pratinjau tidak tersedia untuk file ini. Gunakan tombol untuk membukanya di aplikasi lain.");
+        if (isTextFile(file) && file.size <= MAX_TEXT_PREVIEW_SIZE) {
+            try {
+                var textBase64 = window.AndroidApp.readFileBase64(file.uri);
+                if (!textBase64 && file.size > 0) {
+                    showPreviewMessage(
+                        "File tidak dapat dibaca. Coba buka dengan aplikasi lain."
+                    );
+                    return;
+                }
+
+                var pre = document.createElement("pre");
+                pre.textContent = decodeBase64Text(textBase64);
+                elements.modalBody.appendChild(pre);
+            } catch (error) {
+                console.error("Gagal membaca file teks.", error);
+                showPreviewMessage("Gagal membaca file teks.");
+            }
+            return;
+        }
+
+        showPreviewMessage(
+            "Pratinjau tidak tersedia untuk file ini. Gunakan tombol untuk membukanya di aplikasi lain."
+        );
     }
 
     function closePreview() {
@@ -396,13 +484,17 @@
         if (!bridgeAvailable()) {
             selectedFolderUri = "";
             files = [];
-            setFolderStatus(false, "Fitur penyimpanan tersedia di aplikasi Android.");
+            setFolderStatus(
+                false,
+                "Bridge Android tidak tersedia. Buka aplikasi melalui APK."
+            );
             renderFiles();
             return;
         }
 
         try {
-            selectedFolderUri = window.AndroidApp.getSelectedFolderUri() || "";
+            selectedFolderUri =
+                window.AndroidApp.getSelectedFolderUri() || "";
 
             if (!selectedFolderUri) {
                 files = [];
@@ -411,10 +503,14 @@
                 return;
             }
 
-            setFolderStatus(true, displayFolderLocation(selectedFolderUri));
+            setFolderStatus(
+                true,
+                displayFolderLocation(selectedFolderUri)
+            );
             files = normalizeFiles(window.AndroidApp.listFiles());
             renderFiles();
         } catch (error) {
+            console.error("Gagal memuat daftar file.", error);
             files = [];
             setFolderStatus(true, "Daftar file gagal dimuat.");
             renderFiles();
@@ -423,12 +519,25 @@
     }
 
     function pinEnabled() {
-        return bridgeAvailable() &&
-            typeof window.AndroidApp.isPinEnabled === "function" &&
-            window.AndroidApp.isPinEnabled();
+        if (!bridgeAvailable() ||
+                typeof window.AndroidApp.isPinEnabled !== "function") {
+            return null;
+        }
+
+        try {
+            return Boolean(window.AndroidApp.isPinEnabled());
+        } catch (error) {
+            console.error("Gagal memeriksa status PIN.", error);
+            return null;
+        }
     }
 
     function showApp() {
+        document.documentElement.classList.remove(
+            "pin-required",
+            "pin-check-failed"
+        );
+
         elements.lockScreen.classList.add("is-hidden");
         elements.appShell.classList.remove("is-hidden");
         elements.lockPinInput.value = "";
@@ -437,24 +546,44 @@
     }
 
     function lockApp() {
-        if (!pinEnabled()) {
+        var enabled = pinEnabled();
+
+        if (enabled === false) {
             showApp();
             return;
         }
 
-        closePreview();
-        elements.settingsModal.classList.add("hidden");
+        document.documentElement.classList.add("pin-required");
+        document.documentElement.classList.remove("pin-check-failed");
         elements.appShell.classList.add("is-hidden");
         elements.lockScreen.classList.remove("is-hidden");
         elements.lockPinInput.value = "";
-        elements.lockMessage.textContent = "";
+
+        if (enabled === null) {
+            document.documentElement.classList.add("pin-check-failed");
+            elements.lockMessage.textContent =
+                "Status PIN tidak dapat diperiksa. Pastikan aplikasi dibuka dari APK, lalu buka kembali.";
+        } else {
+            elements.lockMessage.textContent = "";
+        }
+
+        closePreview();
+        elements.settingsModal.classList.add("hidden");
     }
 
     function unlockApp() {
+        if (!bridgeAvailable() ||
+                typeof window.AndroidApp.verifyPin !== "function") {
+            elements.lockMessage.textContent =
+                "Bridge Android tidak tersedia. PIN tidak dapat diverifikasi.";
+            return;
+        }
+
         var pin = elements.lockPinInput.value;
 
         if (!/^[0-9]{4,8}$/.test(pin)) {
-            elements.lockMessage.textContent = "PIN harus terdiri dari 4–8 angka.";
+            elements.lockMessage.textContent =
+                "PIN harus terdiri dari 4–8 angka.";
             return;
         }
 
@@ -468,6 +597,7 @@
                 elements.lockPinInput.focus();
             }
         } catch (error) {
+            console.error("Gagal memverifikasi PIN.", error);
             elements.lockMessage.textContent = "Verifikasi PIN gagal.";
         }
     }
@@ -475,12 +605,19 @@
     function updatePinSettings() {
         var enabled = pinEnabled();
 
-        elements.pinStatus.textContent = enabled
-            ? "PIN aktif. PIN akan diminta saat aplikasi dibuka kembali."
-            : "PIN belum aktif. Aplikasi bisa dibuka tanpa PIN sampai Anda mengaturnya di sini.";
+        if (enabled === null) {
+            elements.pinStatus.textContent =
+                "Bridge Android tidak tersedia; pengaturan PIN tidak dapat digunakan.";
+        } else if (enabled) {
+            elements.pinStatus.textContent =
+                "PIN aktif. PIN akan diminta saat aplikasi dibuka kembali.";
+        } else {
+            elements.pinStatus.textContent =
+                "PIN belum aktif. Aplikasi dapat digunakan tanpa PIN sampai Anda mengaturnya.";
+        }
 
-        elements.currentPinWrap.classList.toggle("is-hidden", !enabled);
-        elements.btnRemovePin.classList.toggle("is-hidden", !enabled);
+        elements.currentPinWrap.classList.toggle("is-hidden", enabled !== true);
+        elements.btnRemovePin.classList.toggle("is-hidden", enabled !== true);
         elements.currentPinInput.value = "";
         elements.newPinInput.value = "";
         elements.confirmPinInput.value = "";
@@ -494,40 +631,66 @@
     }
 
     function savePin() {
+        if (!bridgeAvailable() ||
+                typeof window.AndroidApp.setPin !== "function") {
+            elements.settingsMessage.textContent =
+                "Bridge Android tidak tersedia; PIN tidak dapat disimpan.";
+            return;
+        }
+
+        var enabled = pinEnabled();
+        if (enabled === null) {
+            elements.settingsMessage.textContent =
+                "Status PIN gagal diperiksa. Coba buka ulang aplikasi.";
+            return;
+        }
+
         var currentPin = elements.currentPinInput.value;
         var newPin = elements.newPinInput.value;
         var confirmPin = elements.confirmPinInput.value;
 
         if (!/^[0-9]{4,8}$/.test(newPin)) {
-            elements.settingsMessage.textContent = "PIN baru harus terdiri dari 4–8 angka.";
+            elements.settingsMessage.textContent =
+                "PIN baru harus terdiri dari 4–8 angka.";
             return;
         }
+
         if (newPin !== confirmPin) {
-            elements.settingsMessage.textContent = "Konfirmasi PIN tidak sama.";
+            elements.settingsMessage.textContent =
+                "Konfirmasi PIN tidak sama.";
             return;
         }
-        if (pinEnabled() && !/^[0-9]{4,8}$/.test(currentPin)) {
-            elements.settingsMessage.textContent = "Masukkan PIN saat ini.";
+
+        if (enabled && !/^[0-9]{4,8}$/.test(currentPin)) {
+            elements.settingsMessage.textContent =
+                "Masukkan PIN saat ini.";
             return;
         }
 
         try {
             if (window.AndroidApp.setPin(currentPin, newPin)) {
-                updatePinSettings();
-                elements.settingsMessage.style.color = "#6ee7b7";
-                elements.settingsMessage.textContent = "PIN aplikasi berhasil disimpan.";
+                elements.settingsModal.classList.add("hidden");
+                showToast("PIN berhasil disimpan. Masukkan PIN untuk melanjutkan.");
+                lockApp();
             } else {
                 elements.settingsMessage.textContent =
                     "PIN saat ini salah atau PIN baru gagal disimpan.";
             }
         } catch (error) {
+            console.error("Gagal menyimpan PIN.", error);
             elements.settingsMessage.textContent = "Gagal menyimpan PIN.";
         }
     }
 
     function removePin() {
-        var currentPin = elements.currentPinInput.value;
+        if (!bridgeAvailable() ||
+                typeof window.AndroidApp.removePin !== "function") {
+            elements.settingsMessage.textContent =
+                "Bridge Android tidak tersedia; PIN tidak dapat dihapus.";
+            return;
+        }
 
+        var currentPin = elements.currentPinInput.value;
         if (!/^[0-9]{4,8}$/.test(currentPin)) {
             elements.settingsMessage.textContent =
                 "Masukkan PIN saat ini untuk menghapus PIN aplikasi.";
@@ -538,21 +701,49 @@
             if (window.AndroidApp.removePin(currentPin)) {
                 updatePinSettings();
                 elements.settingsMessage.style.color = "#6ee7b7";
-                elements.settingsMessage.textContent = "PIN aplikasi berhasil dihapus.";
+                elements.settingsMessage.textContent =
+                    "PIN aplikasi berhasil dihapus.";
             } else {
                 elements.settingsMessage.textContent =
                     "PIN saat ini salah atau PIN gagal dihapus.";
             }
         } catch (error) {
+            console.error("Gagal menghapus PIN.", error);
             elements.settingsMessage.textContent = "Gagal menghapus PIN.";
+        }
+    }
+
+    function openCurrentFileExternally() {
+        if (!currentFile || currentFile.isDirectory) {
+            return;
+        }
+
+        if (!bridgeAvailable() ||
+                typeof window.AndroidApp.openFileWithSystemViewer !== "function") {
+            showToast("Fitur ini hanya tersedia di aplikasi Android.");
+            return;
+        }
+
+        try {
+            window.AndroidApp.openFileWithSystemViewer(currentFile.uri);
+        } catch (error) {
+            console.error("Gagal membuka file melalui aplikasi lain.", error);
+            showToast("File tidak dapat dibuka dengan aplikasi lain.");
         }
     }
 
     function bindEvents() {
         elements.btnPickFolder.addEventListener("click", function () {
+            if (!bridgeAvailable() ||
+                    typeof window.AndroidApp.openFolderPicker !== "function") {
+                showToast("Pemilih folder hanya tersedia di aplikasi Android.");
+                return;
+            }
+
             try {
                 window.AndroidApp.openFolderPicker();
             } catch (error) {
+                console.error("Gagal membuka pemilih folder.", error);
                 showToast("Pemilih folder tidak dapat dibuka.");
             }
         });
@@ -561,40 +752,39 @@
         elements.searchInput.addEventListener("input", renderFiles);
         elements.btnSettings.addEventListener("click", openSettings);
         elements.btnUnlock.addEventListener("click", unlockApp);
+        elements.btnSavePin.addEventListener("click", savePin);
+        elements.btnRemovePin.addEventListener("click", removePin);
+        elements.btnCloseModal.addEventListener("click", closePreview);
+        elements.btnOpenExternal.addEventListener("click", openCurrentFileExternally);
+
         elements.lockPinInput.addEventListener("keydown", function (event) {
             if (event.key === "Enter") {
                 unlockApp();
             }
         });
 
-        document.querySelectorAll(".category-tab").forEach(function (tab) {
+        elements.categoryTabs.forEach(function (tab) {
             tab.addEventListener("click", function () {
                 selectedCategory = tab.getAttribute("data-category");
-                document.querySelectorAll(".category-tab").forEach(function (other) {
-                    other.classList.toggle("active", other === tab);
+
+                elements.categoryTabs.forEach(function (otherTab) {
+                    otherTab.classList.toggle("active", otherTab === tab);
                 });
+
                 renderFiles();
             });
-        });
-
-        elements.btnCloseModal.addEventListener("click", closePreview);
-        elements.btnOpenExternal.addEventListener("click", function () {
-            if (currentFile && !currentFile.isDirectory) {
-                window.AndroidApp.openFileWithSystemViewer(currentFile.uri);
-            }
         });
 
         elements.btnCloseSettings.addEventListener("click", function () {
             elements.settingsModal.classList.add("hidden");
         });
-        elements.btnSavePin.addEventListener("click", savePin);
-        elements.btnRemovePin.addEventListener("click", removePin);
 
         elements.previewModal.addEventListener("click", function (event) {
             if (event.target === elements.previewModal) {
                 closePreview();
             }
         });
+
         elements.settingsModal.addEventListener("click", function (event) {
             if (event.target === elements.settingsModal) {
                 elements.settingsModal.classList.add("hidden");
@@ -644,16 +834,73 @@
             categoryTabs: document.querySelectorAll(".category-tab")
         };
 
-        bindEvents();
+        var requiredElements = [
+            "lockScreen",
+            "lockPinInput",
+            "lockMessage",
+            "appShell",
+            "btnPickFolder",
+            "btnRefresh",
+            "btnSettings",
+            "folderStatus",
+            "folderPathDisplay",
+            "searchInput",
+            "fileCount",
+            "fileList",
+            "previewModal",
+            "modalTitle",
+            "modalBody",
+            "btnCloseModal",
+            "btnOpenExternal",
+            "settingsModal",
+            "btnCloseSettings",
+            "pinStatus",
+            "currentPinWrap",
+            "currentPinInput",
+            "newPinInput",
+            "confirmPinInput",
+            "settingsMessage",
+            "btnSavePin",
+            "btnRemovePin"
+        ];
 
-        if (pinEnabled()) {
-            lockApp();
-        } else {
-            showApp();
+        for (var i = 0; i < requiredElements.length; i++) {
+            if (!elements[requiredElements[i]]) {
+                console.error(
+                    "Elemen HTML tidak ditemukan:",
+                    requiredElements[i]
+                );
+                document.documentElement.classList.remove("pin-required");
+                document.documentElement.classList.add("pin-check-failed");
+                return;
+            }
+        }
+
+        try {
+            bindEvents();
+
+            var enabled = pinEnabled();
+            if (enabled === true || enabled === null) {
+                lockApp();
+            } else {
+                showApp();
+            }
+        } catch (error) {
+            console.error("Gagal menginisialisasi aplikasi.", error);
+
+            document.documentElement.classList.add("pin-check-failed");
+            elements.appShell.classList.add("is-hidden");
+            elements.lockScreen.classList.remove("is-hidden");
+            elements.lockMessage.textContent =
+                "Aplikasi gagal dimulai. Tutup lalu buka kembali aplikasi.";
         }
     }
 
-    window.onFolderChanged = refreshFiles;
+    window.onFolderChanged = function () {
+        thumbnailCache = Object.create(null);
+        refreshFiles();
+    };
+
     window.lockApp = lockApp;
 
     if (document.readyState === "loading") {

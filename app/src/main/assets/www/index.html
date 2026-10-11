@@ -2,17 +2,33 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, user-scalable=no"
+    >
     <meta name="theme-color" content="#121417">
     <title>Berangkas</title>
     <link rel="stylesheet" href="style.css">
+
+    <script>
+        (function () {
+            try {
+                if (window.AndroidApp && window.AndroidApp.isPinEnabled()) {
+                    document.documentElement.classList.add("pin-required");
+                }
+            } catch (error) {
+                document.documentElement.classList.add("pin-check-failed");
+            }
+        })();
+    </script>
 </head>
 <body>
     <section id="lockScreen" class="lock-screen is-hidden">
         <div class="lock-card">
-            <div class="lock-icon">🔒</div>
+            <div class="lock-icon" aria-hidden="true">🔒</div>
             <h1>Berangkas terkunci</h1>
             <p>Masukkan PIN untuk melanjutkan.</p>
+
             <label class="sr-only" for="lockPinInput">PIN aplikasi</label>
             <input
                 id="lockPinInput"
@@ -24,20 +40,36 @@
                 autocomplete="off"
                 placeholder="PIN 4–8 angka"
             >
+
             <p id="lockMessage" class="form-message" aria-live="polite"></p>
-            <button id="btnUnlock" class="primary-btn">Buka Berangkas</button>
+            <button id="btnUnlock" class="primary-btn" type="button">
+                Buka Berangkas
+            </button>
         </div>
     </section>
 
-    <div id="appShell" class="is-hidden">
+    <div id="appShell">
         <header class="app-header">
             <div class="brand">
-                <span class="icon">🔒</span>
+                <span class="icon" aria-hidden="true">🔒</span>
                 <h1>Berangkas</h1>
             </div>
+
             <div class="header-actions">
-                <button id="btnSettings" class="icon-btn" title="Pengaturan" aria-label="Pengaturan">⚙️</button>
-                <button id="btnRefresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">🔄</button>
+                <button
+                    id="btnSettings"
+                    class="icon-btn"
+                    type="button"
+                    title="Pengaturan"
+                    aria-label="Pengaturan"
+                >⚙️</button>
+                <button
+                    id="btnRefresh"
+                    class="icon-btn"
+                    type="button"
+                    title="Muat ulang"
+                    aria-label="Muat ulang"
+                >🔄</button>
             </div>
         </header>
 
@@ -45,16 +77,33 @@
             <section class="card folder-card">
                 <div class="folder-header">
                     <span>Folder terpilih:</span>
-                    <span id="folderStatus" class="badge not-selected">Belum dipilih</span>
+                    <span id="folderStatus" class="badge not-selected">
+                        Belum dipilih
+                    </span>
                 </div>
-                <p id="folderPathDisplay" class="path-text">Silakan pilih folder penyimpanan Anda.</p>
-                <button id="btnPickFolder" class="primary-btn">📁 Pilih Folder Berangkas</button>
-                <small class="tip">File tetap dikelola melalui File Manager. Pilih folder penyimpanan melalui pemilih folder Android.</small>
+
+                <p id="folderPathDisplay" class="path-text">
+                    Silakan pilih folder penyimpanan Anda.
+                </p>
+
+                <button id="btnPickFolder" class="primary-btn" type="button">
+                    📁 Pilih Folder Berangkas
+                </button>
+
+                <small class="tip">
+                    File tetap dikelola melalui File Manager. Pilih folder
+                    penyimpanan melalui pemilih folder Android.
+                </small>
             </section>
 
             <section class="filter-box">
                 <label class="sr-only" for="searchInput">Cari file</label>
-                <input id="searchInput" type="search" placeholder="Cari nama file..." autocomplete="off">
+                <input
+                    id="searchInput"
+                    type="search"
+                    placeholder="Cari nama file..."
+                    autocomplete="off"
+                >
             </section>
 
             <section class="card file-list-card">
@@ -64,60 +113,148 @@
                 </div>
 
                 <nav class="category-tabs" aria-label="Kategori file">
-                    <button class="category-tab active" data-category="gambar">Gambar</button>
-                    <button class="category-tab" data-category="video">Video</button>
-                    <button class="category-tab" data-category="lainnya">Lainnya</button>
+                    <button
+                        class="category-tab active"
+                        type="button"
+                        data-category="gambar"
+                        aria-pressed="true"
+                    >Gambar</button>
+                    <button
+                        class="category-tab"
+                        type="button"
+                        data-category="video"
+                        aria-pressed="false"
+                    >Video</button>
+                    <button
+                        class="category-tab"
+                        type="button"
+                        data-category="lainnya"
+                        aria-pressed="false"
+                    >Lainnya</button>
                 </nav>
 
                 <ul id="fileList" class="file-list">
-                    <li class="empty-state">Pilih folder untuk melihat isinya.</li>
+                    <li class="empty-state">
+                        Pilih folder untuk melihat isinya.
+                    </li>
                 </ul>
             </section>
         </main>
     </div>
 
     <div id="previewModal" class="modal hidden">
-        <div class="modal-content">
+        <div
+            class="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modalTitle"
+        >
             <div class="modal-header">
                 <h3 id="modalTitle">Pratinjau</h3>
-                <button id="btnCloseModal" class="close-btn" aria-label="Tutup">&times;</button>
+                <button
+                    id="btnCloseModal"
+                    class="close-btn"
+                    type="button"
+                    aria-label="Tutup pratinjau"
+                >&times;</button>
             </div>
+
             <div id="modalBody" class="modal-body"></div>
+
             <div class="modal-footer">
-                <button id="btnOpenExternal" class="secondary-btn">Buka di Aplikasi Lain</button>
+                <button id="btnOpenExternal" class="secondary-btn" type="button">
+                    Buka di Aplikasi Lain
+                </button>
             </div>
         </div>
     </div>
 
     <div id="settingsModal" class="modal hidden">
-        <div class="modal-content">
+        <div
+            class="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settingsTitle"
+        >
             <div class="modal-header">
-                <h3>Pengaturan</h3>
-                <button id="btnCloseSettings" class="close-btn" aria-label="Tutup">&times;</button>
+                <h3 id="settingsTitle">Pengaturan</h3>
+                <button
+                    id="btnCloseSettings"
+                    class="close-btn"
+                    type="button"
+                    aria-label="Tutup pengaturan"
+                >&times;</button>
             </div>
+
             <div class="modal-body settings-body">
                 <section class="settings-section">
                     <h4>Sandi aplikasi</h4>
-                    <p id="pinStatus" class="settings-description"></p>
+                    <p id="pinStatus" class="settings-description">
+                        Memeriksa status PIN...
+                    </p>
 
-                    <label id="currentPinWrap" class="form-label is-hidden" for="currentPinInput">
+                    <label
+                        id="currentPinWrap"
+                        class="form-label is-hidden"
+                        for="currentPinInput"
+                    >
                         PIN saat ini
-                        <input id="currentPinInput" class="pin-input" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
+                        <input
+                            id="currentPinInput"
+                            class="pin-input"
+                            type="password"
+                            inputmode="numeric"
+                            pattern="[0-9]*"
+                            maxlength="8"
+                            autocomplete="off"
+                            placeholder="PIN saat ini"
+                        >
                     </label>
 
                     <label class="form-label" for="newPinInput">
                         PIN baru (4–8 angka)
-                        <input id="newPinInput" class="pin-input" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
+                        <input
+                            id="newPinInput"
+                            class="pin-input"
+                            type="password"
+                            inputmode="numeric"
+                            pattern="[0-9]*"
+                            maxlength="8"
+                            autocomplete="new-password"
+                            placeholder="PIN baru"
+                        >
                     </label>
 
                     <label class="form-label" for="confirmPinInput">
                         Ulangi PIN baru
-                        <input id="confirmPinInput" class="pin-input" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
+                        <input
+                            id="confirmPinInput"
+                            class="pin-input"
+                            type="password"
+                            inputmode="numeric"
+                            pattern="[0-9]*"
+                            maxlength="8"
+                            autocomplete="new-password"
+                            placeholder="Ulangi PIN baru"
+                        >
                     </label>
 
-                    <p id="settingsMessage" class="form-message" aria-live="polite"></p>
-                    <button id="btnSavePin" class="primary-btn">Simpan PIN</button>
-                    <button id="btnRemovePin" class="danger-btn is-hidden">Hapus PIN aplikasi</button>
+                    <p
+                        id="settingsMessage"
+                        class="form-message"
+                        aria-live="polite"
+                    ></p>
+
+                    <button id="btnSavePin" class="primary-btn" type="button">
+                        Simpan PIN
+                    </button>
+                    <button
+                        id="btnRemovePin"
+                        class="danger-btn is-hidden"
+                        type="button"
+                    >
+                        Hapus PIN aplikasi
+                    </button>
                 </section>
             </div>
         </div>

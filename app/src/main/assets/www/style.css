@@ -9,6 +9,11 @@
     color-scheme: dark;
 }
 
+html,
+body {
+    min-height: 100%;
+}
+
 body {
     min-height: 100vh;
     padding-bottom: 30px;
@@ -28,8 +33,20 @@ button {
 }
 
 .is-hidden,
-.hidden {
+.hidden,
+.lock-screen.is-hidden,
+.modal.hidden {
     display: none !important;
+}
+
+html.pin-required #appShell,
+html.pin-check-failed #appShell {
+    display: none !important;
+}
+
+html.pin-required #lockScreen,
+html.pin-check-failed #lockScreen {
+    display: flex !important;
 }
 
 .sr-only {
@@ -63,6 +80,7 @@ button {
 .brand h1 {
     color: #38bdf8;
     font-size: 1.2rem;
+    font-weight: 700;
 }
 
 .icon {
@@ -204,7 +222,7 @@ button {
 
 .category-tabs {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     margin-bottom: 12px;
 }
@@ -246,6 +264,12 @@ button {
 
 .file-item:active {
     background: #1e2632;
+}
+
+.file-item:focus-visible,
+button:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
 }
 
 .file-info-col {
@@ -322,7 +346,10 @@ button {
 .modal {
     position: fixed;
     z-index: 100;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -359,6 +386,7 @@ button {
 }
 
 .close-btn {
+    flex-shrink: 0;
     border: 0;
     background: transparent;
     color: #94a3b8;
