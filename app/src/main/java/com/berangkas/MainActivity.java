@@ -1,19 +1,20 @@
-
 package com.berangkas;
 
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
-import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
+import android.media.MediaMetadataRetriever;
 
 import androidx.annotation.Nullable;
 import androidx.documentfile.provider.DocumentFile;
@@ -22,28 +23,36 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
 
 public class MainActivity extends Activity {
 
     private static final int REQUEST_CODE_PICK_FOLDER = 1001;
-
     private static final String PREFS_NAME = "BerangkasPrefs";
     private static final String KEY_FOLDER_URI = "folder_tree_uri";
-
-    private static final int BUFFER_SIZE = 8192;
-    private static final int MAX_PREVIEW_SIZE = 20 * 1024 * 1024;
+    private static final String KEY_PIN_SALT = "app_pin_salt";
+    private static final String KEY_PIN_HASH = "app_pin_hash";
+    private static final String KEY_PIN_FAILED_ATTEMPTS = "app_pin_failed_attempts";
+    private static final String KEY_PIN_LOCKOUT_UNTIL = "app_pin_lockout_until";
+    private static final int PIN_ITERATIONS = 120000;
+    private static final int MAX_PIN_ATTEMPTS = 5;
+    private static final long PIN_LOCKOUT_MILLIS = 30000L;
 
     private WebView webView;
     private SharedPreferences prefs;
-
-    private String lastBackendError = "";
+    private boolean hasBeenPaused;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        getExternalMediaDirs();
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
 
         webView = new WebView(this);
@@ -55,67 +64,29 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
 
-        // Tidak mengizinkan navigasi ke halaman eksternal di WebView.
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(
-                    WebView view,
-                    WebResourceRequest request
-            ) {
-                Uri uri = request.getUrl();
-                String scheme = uri.getScheme();
-
-                return !"file".equalsIgnoreCase(scheme)
-                        || !uri.toString().startsWith(
-                                "file:///android_asset/www/"
-                        );
-            }
-
-            @Override
-            public boolean shouldOverrideUrlLoading(
-                    WebView view,
-                    String url
-            ) {
-                return url == null
-                        || !url.startsWith(
-                                "file:///android_asset/www/"
-                        );
-            }
-        });
-
-        webView.addJavascriptInterface(
-                new WebAppInterface(),
-                "AndroidApp"
-        );
-
-        webView.loadUrl(
-                "file:///android_asset/www/index.html"
-        );
+        webView.setWebViewClient(new WebViewClient());
+        webView.addJavascriptInterface(new WebAppInterface(), "AndroidApp");
+        webView.loadUrl("file:///android_asset/www/index.html");
     }
 
-    // =========================================================
-    // PEMILIHAN FOLDER
-    // =========================================================
+    @Override
+    protected void onResume() {
+        super.onResume();
 
-    private void openFolderPickerInternal() {
-        try {
-            Intent intent = new Intent(
-                    Intent.ACTION_OPEN_DOCUMENT_TREE
+        if (hasBeenPaused && webView != null) {
+            webView.evaluateJavascript(
+                    "if (window.lockApp) window.lockApp();",
+                    null
             );
-
-            intent.addFlags(
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                            | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-            );
-
-            startActivityForResult(
-                    intent,
-                    REQUEST_CODE_PICK_FOLDER
-            );
-
-        } catch (Exception e) {
-            showToast("Tidak dapat membuka pemilih folder.");
         }
+
+        hasBeenPaused = false;
+    }
+
+    @Override
+    protected void onPause() {
+        hasBeenPaused = true;
+        super.onPause();
     }
 
     @Override
@@ -126,64 +97,40 @@ public class MainActivity extends Activity {
     ) {
         super.onActivityResult(requestCode, resultCode, data);
 
-        if (requestCode != REQUEST_CODE_PICK_FOLDER) {
-            return;
-        }
-
-        if (resultCode != RESULT_OK || data == null) {
+        if (requestCode != REQUEST_CODE_PICK_FOLDER ||
+                resultCode != RESULT_OK ||
+                data == null) {
             return;
         }
 
         Uri treeUri = data.getData();
-
         if (treeUri == null) {
-            showToast("Folder tidak valid.");
-            return;
-        }
-
-        int returnedFlags = data.getFlags();
-
-        int permissionFlags = returnedFlags
-                & Intent.FLAG_GRANT_READ_URI_PERMISSION;
-
-        if (permissionFlags == 0) {
-            showToast("Izin membaca folder tidak diberikan.");
             return;
         }
 
         try {
             getContentResolver().takePersistableUriPermission(
                     treeUri,
-                    permissionFlags
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
             );
 
-            // Simpan hanya setelah izin berhasil diperoleh.
             prefs.edit()
                     .putString(KEY_FOLDER_URI, treeUri.toString())
                     .apply();
 
-            lastBackendError = "";
-
-            notifyFolderChanged();
-
-        } catch (SecurityException e) {
-            showToast("Gagal menyimpan izin akses folder.");
-        } catch (Exception e) {
-            showToast("Gagal memilih folder.");
-        }
-    }
-
-    private void notifyFolderChanged() {
-        runOnUiThread(() -> {
             if (webView != null) {
                 webView.evaluateJavascript(
-                        "if (typeof window.onFolderChanged === 'function') {"
-                                + "window.onFolderChanged();"
-                                + "}",
+                        "if (window.onFolderChanged) window.onFolderChanged();",
                         null
                 );
             }
-        });
+        } catch (SecurityException e) {
+            Toast.makeText(
+                    this,
+                    "Gagal mendapatkan izin folder: " + e.getMessage(),
+                    Toast.LENGTH_LONG
+            ).show();
+        }
     }
 
     @Override
@@ -199,290 +146,364 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         if (webView != null) {
             webView.removeJavascriptInterface("AndroidApp");
-            webView.stopLoading();
-            webView.loadUrl("about:blank");
             webView.destroy();
             webView = null;
         }
-
         super.onDestroy();
     }
-
-    private void showToast(String message) {
-        runOnUiThread(() ->
-                Toast.makeText(
-                        MainActivity.this,
-                        message,
-                        Toast.LENGTH_SHORT
-                ).show()
-        );
-    }
-
-    private DocumentFile getSelectedFolder() {
-        String uriString = prefs.getString(
-                KEY_FOLDER_URI,
-                ""
-        );
-
-        if (uriString == null || uriString.isEmpty()) {
-            lastBackendError = "Belum ada folder yang dipilih.";
-            return null;
-        }
-
-        try {
-            Uri treeUri = Uri.parse(uriString);
-
-            DocumentFile folder = DocumentFile.fromTreeUri(
-                    MainActivity.this,
-                    treeUri
-            );
-
-            if (folder == null || !folder.exists()) {
-                lastBackendError = "Folder tidak tersedia.";
-                return null;
-            }
-
-            if (!folder.isDirectory()) {
-                lastBackendError = "Lokasi yang dipilih bukan folder.";
-                return null;
-            }
-
-            lastBackendError = "";
-            return folder;
-
-        } catch (SecurityException e) {
-            lastBackendError = "Izin folder telah dicabut.";
-            return null;
-        } catch (Exception e) {
-            lastBackendError = "Gagal mengakses folder.";
-            return null;
-        }
-    }
-
-    // =========================================================
-    // JAVASCRIPT BRIDGE
-    // Nama dan method dipertahankan agar kompatibel dengan app.js.
-    // =========================================================
 
     public class WebAppInterface {
 
         @JavascriptInterface
         public void openFolderPicker() {
-            runOnUiThread(
-                    () -> openFolderPickerInternal()
-            );
+            runOnUiThread(() -> {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                intent.addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION |
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                );
+                startActivityForResult(intent, REQUEST_CODE_PICK_FOLDER);
+            });
         }
 
         @JavascriptInterface
         public String getSelectedFolderUri() {
-            return prefs.getString(
-                    KEY_FOLDER_URI,
-                    ""
-            );
+            return prefs.getString(KEY_FOLDER_URI, "");
         }
 
-        @JavascriptInterface
-        public String getLastError() {
-            return lastBackendError;
-        }
-
-        // Mengembalikan daftar item dalam folder terpilih.
         @JavascriptInterface
         public String listFiles() {
-            JSONArray jsonArray = new JSONArray();
-
-            DocumentFile folder = getSelectedFolder();
-
-            if (folder == null) {
-                return jsonArray.toString();
+            String uriString = prefs.getString(KEY_FOLDER_URI, "");
+            if (uriString.isEmpty()) {
+                return "[]";
             }
 
             try {
-                DocumentFile[] files = folder.listFiles();
-
-                if (files == null) {
-                    lastBackendError = "Gagal membaca daftar file.";
-                    return jsonArray.toString();
-                }
-
-                for (DocumentFile file : files) {
-                    if (file == null || file.getName() == null) {
-                        continue;
-                    }
-
-                    JSONObject obj = new JSONObject();
-
-                    obj.put("name", file.getName());
-                    obj.put("size", file.length());
-                    obj.put("isDirectory", file.isDirectory());
-
-                    String mimeType = file.getType();
-
-                    obj.put(
-                            "type",
-                            mimeType != null ? mimeType : "unknown"
-                    );
-
-                    obj.put("lastModified", file.lastModified());
-                    obj.put("uri", file.getUri().toString());
-
-                    jsonArray.put(obj);
-                }
-
-                lastBackendError = "";
-
-            } catch (SecurityException e) {
-                lastBackendError = "Izin membaca folder ditolak.";
-            } catch (Exception e) {
-                lastBackendError = "Terjadi kesalahan saat membaca file.";
-            }
-
-            return jsonArray.toString();
-        }
-
-        // Membuka file menggunakan aplikasi Android yang sesuai.
-        @JavascriptInterface
-        public void openFileWithSystemViewer(String uriString) {
-            if (uriString == null || uriString.trim().isEmpty()) {
-                showToast("Lokasi file tidak valid.");
-                return;
-            }
-
-            try {
-                Uri fileUri = Uri.parse(uriString);
-
-                DocumentFile docFile = DocumentFile.fromSingleUri(
+                DocumentFile folder = DocumentFile.fromTreeUri(
                         MainActivity.this,
-                        fileUri
+                        Uri.parse(uriString)
                 );
 
-                if (docFile == null || !docFile.exists()) {
-                    showToast("File tidak ditemukan.");
-                    return;
+                if (folder == null || !folder.exists() || !folder.isDirectory()) {
+                    return "[]";
                 }
 
-                String mimeType = docFile.getType();
+                JSONArray jsonArray = new JSONArray();
+                DocumentFile[] children = folder.listFiles();
 
-                if (mimeType == null || mimeType.trim().isEmpty()) {
-                    mimeType = "*/*";
+                for (DocumentFile file : children) {
+                    JSONObject item = new JSONObject();
+                    item.put("name", file.getName() == null ? "" : file.getName());
+                    item.put("size", file.length());
+                    item.put("isDirectory", file.isDirectory());
+                    item.put(
+                            "type",
+                            file.getType() == null ? "unknown" : file.getType()
+                    );
+                    item.put("lastModified", file.lastModified());
+                    item.put("uri", file.getUri().toString());
+                    jsonArray.put(item);
                 }
 
-                Intent viewIntent = new Intent(Intent.ACTION_VIEW);
-                viewIntent.setDataAndType(fileUri, mimeType);
-                viewIntent.addFlags(
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                );
-
-                Intent chooser = Intent.createChooser(
-                        viewIntent,
-                        "Buka file dengan"
-                );
-
-                startActivity(chooser);
-
-            } catch (SecurityException e) {
-                showToast("Tidak memiliki izin membaca file.");
+                return jsonArray.toString();
             } catch (Exception e) {
-                showToast(
-                        "Tidak ada aplikasi yang dapat membuka file ini."
-                );
+                return "[]";
             }
         }
 
-        // Membaca file untuk fitur pratinjau berbasis Base64.
-        // Ukuran pratinjau dibatasi untuk mengurangi risiko kehabisan memori.
         @JavascriptInterface
         public String readFileBase64(String uriString) {
-            if (uriString == null || uriString.trim().isEmpty()) {
-                lastBackendError = "Lokasi file tidak valid.";
-                return "";
-            }
+            try (InputStream input = getContentResolver().openInputStream(
+                    Uri.parse(uriString)
+            )) {
+                if (input == null) {
+                    return "";
+                }
 
-            try {
-                Uri fileUri = Uri.parse(uriString);
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                byte[] chunk = new byte[8192];
+                int count;
 
-                DocumentFile docFile = DocumentFile.fromSingleUri(
-                        MainActivity.this,
-                        fileUri
+                while ((count = input.read(chunk)) != -1) {
+                    output.write(chunk, 0, count);
+                }
+
+                return Base64.encodeToString(
+                        output.toByteArray(),
+                        Base64.NO_WRAP
                 );
-
-                if (docFile == null || !docFile.exists()) {
-                    lastBackendError = "File tidak ditemukan.";
-                    return "";
-                }
-
-                if (docFile.isDirectory()) {
-                    lastBackendError = "Folder tidak dapat dipratinjau sebagai file.";
-                    return "";
-                }
-
-                long fileSize = docFile.length();
-
-                if (fileSize > MAX_PREVIEW_SIZE) {
-                    lastBackendError =
-                            "File terlalu besar untuk pratinjau (maksimal 20 MB).";
-                    return "";
-                }
-
-                try (
-                        InputStream input = getContentResolver()
-                                .openInputStream(fileUri);
-                        ByteArrayOutputStream output =
-                                new ByteArrayOutputStream()
-                ) {
-                    if (input == null) {
-                        lastBackendError = "File tidak dapat dibaca.";
-                        return "";
-                    }
-
-                    byte[] buffer = new byte[BUFFER_SIZE];
-                    int bytesRead;
-                    int totalBytes = 0;
-
-                    while ((bytesRead = input.read(buffer)) != -1) {
-                        totalBytes += bytesRead;
-
-                        if (totalBytes > MAX_PREVIEW_SIZE) {
-                            lastBackendError =
-                                    "File terlalu besar untuk pratinjau.";
-                            return "";
-                        }
-
-                        output.write(buffer, 0, bytesRead);
-                    }
-
-                    lastBackendError = "";
-
-                    return Base64.encodeToString(
-                            output.toByteArray(),
-                            Base64.NO_WRAP
-                    );
-                }
-
-            } catch (SecurityException e) {
-                lastBackendError = "Izin membaca file ditolak.";
-                return "";
-            } catch (IOException e) {
-                lastBackendError = "Terjadi kesalahan saat membaca file.";
-                return "";
             } catch (Exception e) {
-                lastBackendError = "File gagal dibaca.";
                 return "";
             }
         }
 
         @JavascriptInterface
-        public void showToast(String msg) {
-            if (msg == null || msg.trim().isEmpty()) {
-                return;
+        public String getImageThumbnailBase64(String uriString) {
+            Bitmap bitmap = null;
+
+            try {
+                Uri uri = Uri.parse(uriString);
+                BitmapFactory.Options bounds = new BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) {
+                        return "";
+                    }
+                    BitmapFactory.decodeStream(input, null, bounds);
+                }
+
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                    return "";
+                }
+
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inSampleSize = calculateSampleSize(
+                        bounds.outWidth,
+                        bounds.outHeight,
+                        480
+                );
+
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) {
+                        return "";
+                    }
+                    bitmap = BitmapFactory.decodeStream(input, null, options);
+                }
+
+                return bitmapToBase64(bitmap);
+            } catch (Exception e) {
+                return "";
+            } finally {
+                if (bitmap != null && !bitmap.isRecycled()) {
+                    bitmap.recycle();
+                }
+            }
+        }
+
+        @JavascriptInterface
+        public String getVideoThumbnailBase64(String uriString) {
+            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+            Bitmap bitmap = null;
+
+            try {
+                retriever.setDataSource(
+                        MainActivity.this,
+                        Uri.parse(uriString)
+                );
+                bitmap = retriever.getFrameAtTime(
+                        1000000L,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                );
+                return bitmapToBase64(bitmap);
+            } catch (Exception e) {
+                return "";
+            } finally {
+                try {
+                    retriever.release();
+                } catch (Exception ignored) {
+                    // Tidak ada tindakan lanjutan jika retriever gagal dilepas.
+                }
+
+                if (bitmap != null && !bitmap.isRecycled()) {
+                    bitmap.recycle();
+                }
+            }
+        }
+
+        @JavascriptInterface
+        public void openFileWithSystemViewer(String uriString) {
+            try {
+                Uri fileUri = Uri.parse(uriString);
+                DocumentFile file = DocumentFile.fromSingleUri(
+                        MainActivity.this,
+                        fileUri
+                );
+                String mime = file != null && file.getType() != null
+                        ? file.getType()
+                        : "*/*";
+
+                Intent viewIntent = new Intent(Intent.ACTION_VIEW);
+                viewIntent.setDataAndType(fileUri, mime);
+                viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivity(Intent.createChooser(viewIntent, "Buka file dengan"));
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(
+                        MainActivity.this,
+                        "Tidak ada aplikasi untuk membuka file ini",
+                        Toast.LENGTH_SHORT
+                ).show());
+            }
+        }
+
+        @JavascriptInterface
+        public boolean isPinEnabled() {
+            return prefs.contains(KEY_PIN_SALT) && prefs.contains(KEY_PIN_HASH);
+        }
+
+        @JavascriptInterface
+        public synchronized boolean verifyPin(String pin) {
+            if (!isPinEnabled()) {
+                return false;
             }
 
-            // Batasi pesan dari JavaScript agar tidak terlalu panjang.
-            String safeMessage = msg.length() > 200
-                    ? msg.substring(0, 200)
-                    : msg;
+            long now = System.currentTimeMillis();
+            long lockoutUntil = prefs.getLong(KEY_PIN_LOCKOUT_UNTIL, 0L);
 
-            showToast(safeMessage);
+            if (now < lockoutUntil) {
+                return false;
+            }
+
+            try {
+                if (matchesStoredPin(pin)) {
+                    prefs.edit()
+                            .remove(KEY_PIN_FAILED_ATTEMPTS)
+                            .remove(KEY_PIN_LOCKOUT_UNTIL)
+                            .apply();
+                    return true;
+                }
+            } catch (Exception ignored) {
+                return false;
+            }
+
+            int attempts = prefs.getInt(KEY_PIN_FAILED_ATTEMPTS, 0) + 1;
+            SharedPreferences.Editor editor = prefs.edit()
+                    .putInt(KEY_PIN_FAILED_ATTEMPTS, attempts);
+
+            if (attempts >= MAX_PIN_ATTEMPTS) {
+                editor.putLong(
+                        KEY_PIN_LOCKOUT_UNTIL,
+                        now + PIN_LOCKOUT_MILLIS
+                );
+                editor.putInt(KEY_PIN_FAILED_ATTEMPTS, 0);
+            }
+
+            editor.apply();
+            return false;
+        }
+
+        @JavascriptInterface
+        public synchronized boolean setPin(String currentPin, String newPin) {
+            if (!isValidPin(newPin)) {
+                return false;
+            }
+
+            if (isPinEnabled() && !verifyPin(currentPin)) {
+                return false;
+            }
+
+            try {
+                byte[] salt = new byte[16];
+                new SecureRandom().nextBytes(salt);
+                byte[] hash = derivePinHash(newPin, salt);
+
+                prefs.edit()
+                        .putString(
+                                KEY_PIN_SALT,
+                                Base64.encodeToString(salt, Base64.NO_WRAP)
+                        )
+                        .putString(
+                                KEY_PIN_HASH,
+                                Base64.encodeToString(hash, Base64.NO_WRAP)
+                        )
+                        .remove(KEY_PIN_FAILED_ATTEMPTS)
+                        .remove(KEY_PIN_LOCKOUT_UNTIL)
+                        .apply();
+
+                return true;
+            } catch (GeneralSecurityException e) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public synchronized boolean removePin(String currentPin) {
+            if (!isPinEnabled() || !verifyPin(currentPin)) {
+                return false;
+            }
+
+            prefs.edit()
+                    .remove(KEY_PIN_SALT)
+                    .remove(KEY_PIN_HASH)
+                    .remove(KEY_PIN_FAILED_ATTEMPTS)
+                    .remove(KEY_PIN_LOCKOUT_UNTIL)
+                    .apply();
+
+            return true;
+        }
+
+        @JavascriptInterface
+        public void showToast(String message) {
+            runOnUiThread(() -> Toast.makeText(
+                    MainActivity.this,
+                    message,
+                    Toast.LENGTH_SHORT
+            ).show());
+        }
+
+        private boolean matchesStoredPin(String pin)
+                throws GeneralSecurityException {
+            if (!isValidPin(pin)) {
+                return false;
+            }
+
+            String saltString = prefs.getString(KEY_PIN_SALT, "");
+            String hashString = prefs.getString(KEY_PIN_HASH, "");
+
+            if (saltString.isEmpty() || hashString.isEmpty()) {
+                return false;
+            }
+
+            byte[] salt = Base64.decode(saltString, Base64.NO_WRAP);
+            byte[] expectedHash = Base64.decode(hashString, Base64.NO_WRAP);
+            byte[] actualHash = derivePinHash(pin, salt);
+
+            return MessageDigest.isEqual(expectedHash, actualHash);
+        }
+
+        private byte[] derivePinHash(String pin, byte[] salt)
+                throws GeneralSecurityException {
+            PBEKeySpec spec = new PBEKeySpec(
+                    pin.toCharArray(),
+                    salt,
+                    PIN_ITERATIONS,
+                    256
+            );
+
+            try {
+                SecretKeyFactory factory = SecretKeyFactory.getInstance(
+                        "PBKDF2WithHmacSHA1"
+                );
+                return factory.generateSecret(spec).getEncoded();
+            } finally {
+                spec.clearPassword();
+            }
+        }
+
+        private boolean isValidPin(String pin) {
+            return pin != null && pin.matches("[0-9]{4,8}");
+        }
+
+        private int calculateSampleSize(int width, int height, int maxSize) {
+            int sampleSize = 1;
+
+            while (width / sampleSize > maxSize ||
+                    height / sampleSize > maxSize) {
+                sampleSize *= 2;
+            }
+
+            return sampleSize;
+        }
+
+        private String bitmapToBase64(Bitmap bitmap) {
+            if (bitmap == null) {
+                return "";
+            }
+
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output);
+
+            return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
         }
     }
 }
