@@ -1,0 +1,6 @@
+  Implementasi ini menggunakan Native Android WebView dengan jembatan
+  @JavascriptInterface yang menghubungkan frontend (HTML/CSS/JS) dengan backend
+  Android. Penyimpanan menggunakan Storage Access Framework (SAF)
+  (ACTION_OPEN_DOCUMENT_TREE), yang merupakan standar resmi Android (kompatibel dari
+  Android 7 hingga Android 14/15+) sehingga aman dari pembatasan Scoped Storage dan
+  tidak memerlukan izin berisiko seperti MANAGE_EXTERNAL_STORAGE.

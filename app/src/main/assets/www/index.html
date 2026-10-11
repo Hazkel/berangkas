@@ -1,0 +1,76 @@
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-
+  scalable=no">
+        <title>Berangkas</title>
+        <link rel="stylesheet" href="style.css">
+    </head>
+    <body>
+        <header class="app-header">
+            <div class="brand">
+                <span class="icon">🔒</span>
+                <h1>Berangkas</h1>
+            </div>
+            <button id="btnRefresh" class="icon-btn" title="Muat Ulang">🔄</button>
+        </header>
+
+        <main class="container">
+            <!-- Panel Info Folder & Pemilih -->
+            <section class="card folder-card">
+                <div class="folder-header">
+                    <span class="folder-label">Folder Terpilih:</span>
+                    <span id="folderStatus" class="badge not-selected">Belum
+  Dipilih</span>
+                </div>
+                <p id="folderPathDisplay" class="path-text">Silakan pilih folder
+  penyimpanan Anda.</p>
+                <div class="folder-actions">
+                    <button id="btnPickFolder" class="primary-btn">
+                        📁 Pilih Folder Berangkas
+                    </button>
+                </div>
+                <small class="tip">
+                    💡 Target folder: <code>Android/media/com.Berangkas/</code>. Anda
+  bisa menambah/menghapus file dari File Manager bawaan HP.
+                </small>
+            </section>
+
+            <!-- Filter / Pencarian -->
+            <section class="filter-box">
+                <input type="text" id="searchInput" placeholder="Cari nama file..."
+  autocomplete="off">
+            </section>
+
+            <!-- Daftar File -->
+            <section class="card file-list-card">
+                <div class="list-header">
+                    <h2>Isi Berangkas</h2>
+                    <span id="fileCount" class="badge count">0 file</span>
+                </div>
+                <ul id="fileList" class="file-list">
+                    <li class="empty-state">Belum ada file atau folder belum dipilih.
+  </li>
+                </ul>
+            </section>
+        </main>
+
+        <!-- Modal Pratinjau File (Gambar / Teks) -->
+        <div id="previewModal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Pratinjau</h3>
+                    <button id="btnCloseModal" class="close-btn">&times;</button>
+                </div>
+                <div id="modalBody" class="modal-body"></div>
+                <div class="modal-footer">
+                    <button id="btnOpenExternal" class="secondary-btn">Buka di
+  Aplikasi Lain</button>
+                </div>
+            </div>
+        </div>
+
+        <script src="app.js"></script>
+    </body>
+    </html>
