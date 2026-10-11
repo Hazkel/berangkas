@@ -22,7 +22,7 @@
                 pattern="[0-9]*"
                 maxlength="8"
                 autocomplete="off"
-                placeholder="Masukkan PIN"
+                placeholder="PIN 4–8 angka"
             >
             <p id="lockMessage" class="form-message" aria-live="polite"></p>
             <button id="btnUnlock" class="primary-btn">Buka Berangkas</button>
@@ -44,25 +44,17 @@
         <main class="container">
             <section class="card folder-card">
                 <div class="folder-header">
-                    <span class="folder-label">Folder terpilih:</span>
+                    <span>Folder terpilih:</span>
                     <span id="folderStatus" class="badge not-selected">Belum dipilih</span>
                 </div>
                 <p id="folderPathDisplay" class="path-text">Silakan pilih folder penyimpanan Anda.</p>
                 <button id="btnPickFolder" class="primary-btn">📁 Pilih Folder Berangkas</button>
-                <small class="tip">
-                    💡 Pilih folder penyimpanan melalui pemilih folder Android.
-                    File tetap dikelola lewat File Manager.
-                </small>
+                <small class="tip">File tetap dikelola melalui File Manager. Pilih folder penyimpanan melalui pemilih folder Android.</small>
             </section>
 
             <section class="filter-box">
                 <label class="sr-only" for="searchInput">Cari file</label>
-                <input
-                    type="search"
-                    id="searchInput"
-                    placeholder="Cari nama file..."
-                    autocomplete="off"
-                >
+                <input id="searchInput" type="search" placeholder="Cari nama file..." autocomplete="off">
             </section>
 
             <section class="card file-list-card">
@@ -72,9 +64,9 @@
                 </div>
 
                 <nav class="category-tabs" aria-label="Kategori file">
-                    <button class="category-tab active" id="tabGambar" data-category="gambar">Gambar</button>
-                    <button class="category-tab" id="tabVideo" data-category="video">Video</button>
-                    <button class="category-tab" id="tabLainnya" data-category="lainnya">Lainnya</button>
+                    <button class="category-tab active" data-category="gambar">Gambar</button>
+                    <button class="category-tab" data-category="video">Video</button>
+                    <button class="category-tab" data-category="lainnya">Lainnya</button>
                 </nav>
 
                 <ul id="fileList" class="file-list">
@@ -110,44 +102,17 @@
 
                     <label id="currentPinWrap" class="form-label is-hidden" for="currentPinInput">
                         PIN saat ini
-                        <input
-                            id="currentPinInput"
-                            class="pin-input"
-                            type="password"
-                            inputmode="numeric"
-                            pattern="[0-9]*"
-                            maxlength="8"
-                            autocomplete="off"
-                            placeholder="PIN saat ini"
-                        >
+                        <input id="currentPinInput" class="pin-input" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
                     </label>
 
                     <label class="form-label" for="newPinInput">
                         PIN baru (4–8 angka)
-                        <input
-                            id="newPinInput"
-                            class="pin-input"
-                            type="password"
-                            inputmode="numeric"
-                            pattern="[0-9]*"
-                            maxlength="8"
-                            autocomplete="new-password"
-                            placeholder="PIN baru"
-                        >
+                        <input id="newPinInput" class="pin-input" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
                     </label>
 
                     <label class="form-label" for="confirmPinInput">
                         Ulangi PIN baru
-                        <input
-                            id="confirmPinInput"
-                            class="pin-input"
-                            type="password"
-                            inputmode="numeric"
-                            pattern="[0-9]*"
-                            maxlength="8"
-                            autocomplete="new-password"
-                            placeholder="Ulangi PIN baru"
-                        >
+                        <input id="confirmPinInput" class="pin-input" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
                     </label>
 
                     <p id="settingsMessage" class="form-message" aria-live="polite"></p>

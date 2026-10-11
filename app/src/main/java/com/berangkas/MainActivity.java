@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
@@ -14,7 +15,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
-import android.media.MediaMetadataRetriever;
 
 import androidx.annotation.Nullable;
 import androidx.documentfile.provider.DocumentFile;
@@ -32,21 +32,21 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.PBEKeySpec;
 
 public class MainActivity extends Activity {
-
     private static final int REQUEST_CODE_PICK_FOLDER = 1001;
     private static final String PREFS_NAME = "BerangkasPrefs";
     private static final String KEY_FOLDER_URI = "folder_tree_uri";
     private static final String KEY_PIN_SALT = "app_pin_salt";
     private static final String KEY_PIN_HASH = "app_pin_hash";
-    private static final String KEY_PIN_FAILED_ATTEMPTS = "app_pin_failed_attempts";
-    private static final String KEY_PIN_LOCKOUT_UNTIL = "app_pin_lockout_until";
+    private static final String KEY_PIN_ATTEMPTS = "app_pin_failed_attempts";
+    private static final String KEY_PIN_LOCKOUT = "app_pin_lockout_until";
+
     private static final int PIN_ITERATIONS = 120000;
     private static final int MAX_PIN_ATTEMPTS = 5;
     private static final long PIN_LOCKOUT_MILLIS = 30000L;
 
     private WebView webView;
     private SharedPreferences prefs;
-    private boolean hasBeenPaused;
+    private boolean shouldLockOnResume;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,23 +70,22 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onPause() {
+        shouldLockOnResume = true;
+        super.onPause();
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
 
-        if (hasBeenPaused && webView != null) {
+        if (shouldLockOnResume && webView != null) {
             webView.evaluateJavascript(
                     "if (window.lockApp) window.lockApp();",
                     null
             );
         }
-
-        hasBeenPaused = false;
-    }
-
-    @Override
-    protected void onPause() {
-        hasBeenPaused = true;
-        super.onPause();
+        shouldLockOnResume = false;
     }
 
     @Override
@@ -113,7 +112,6 @@ public class MainActivity extends Activity {
                     treeUri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
             );
-
             prefs.edit()
                     .putString(KEY_FOLDER_URI, treeUri.toString())
                     .apply();
@@ -153,7 +151,6 @@ public class MainActivity extends Activity {
     }
 
     public class WebAppInterface {
-
         @JavascriptInterface
         public void openFolderPicker() {
             runOnUiThread(() -> {
@@ -188,24 +185,19 @@ public class MainActivity extends Activity {
                     return "[]";
                 }
 
-                JSONArray jsonArray = new JSONArray();
-                DocumentFile[] children = folder.listFiles();
-
-                for (DocumentFile file : children) {
+                JSONArray result = new JSONArray();
+                for (DocumentFile file : folder.listFiles()) {
                     JSONObject item = new JSONObject();
                     item.put("name", file.getName() == null ? "" : file.getName());
                     item.put("size", file.length());
                     item.put("isDirectory", file.isDirectory());
-                    item.put(
-                            "type",
-                            file.getType() == null ? "unknown" : file.getType()
-                    );
+                    item.put("type", file.getType() == null ? "unknown" : file.getType());
                     item.put("lastModified", file.lastModified());
                     item.put("uri", file.getUri().toString());
-                    jsonArray.put(item);
+                    result.put(item);
                 }
 
-                return jsonArray.toString();
+                return result.toString();
             } catch (Exception e) {
                 return "[]";
             }
@@ -275,9 +267,7 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return "";
             } finally {
-                if (bitmap != null && !bitmap.isRecycled()) {
-                    bitmap.recycle();
-                }
+                recycle(bitmap);
             }
         }
 
@@ -287,10 +277,7 @@ public class MainActivity extends Activity {
             Bitmap bitmap = null;
 
             try {
-                retriever.setDataSource(
-                        MainActivity.this,
-                        Uri.parse(uriString)
-                );
+                retriever.setDataSource(MainActivity.this, Uri.parse(uriString));
                 bitmap = retriever.getFrameAtTime(
                         1000000L,
                         MediaMetadataRetriever.OPTION_CLOSEST_SYNC
@@ -302,12 +289,9 @@ public class MainActivity extends Activity {
                 try {
                     retriever.release();
                 } catch (Exception ignored) {
-                    // Tidak ada tindakan lanjutan jika retriever gagal dilepas.
+                    // Tidak ada resource lain yang perlu dilepas.
                 }
-
-                if (bitmap != null && !bitmap.isRecycled()) {
-                    bitmap.recycle();
-                }
+                recycle(bitmap);
             }
         }
 
@@ -348,34 +332,29 @@ public class MainActivity extends Activity {
             }
 
             long now = System.currentTimeMillis();
-            long lockoutUntil = prefs.getLong(KEY_PIN_LOCKOUT_UNTIL, 0L);
-
-            if (now < lockoutUntil) {
+            if (now < prefs.getLong(KEY_PIN_LOCKOUT, 0L)) {
                 return false;
             }
 
             try {
                 if (matchesStoredPin(pin)) {
                     prefs.edit()
-                            .remove(KEY_PIN_FAILED_ATTEMPTS)
-                            .remove(KEY_PIN_LOCKOUT_UNTIL)
+                            .remove(KEY_PIN_ATTEMPTS)
+                            .remove(KEY_PIN_LOCKOUT)
                             .apply();
                     return true;
                 }
-            } catch (Exception ignored) {
+            } catch (GeneralSecurityException | IllegalArgumentException e) {
                 return false;
             }
 
-            int attempts = prefs.getInt(KEY_PIN_FAILED_ATTEMPTS, 0) + 1;
+            int attempts = prefs.getInt(KEY_PIN_ATTEMPTS, 0) + 1;
             SharedPreferences.Editor editor = prefs.edit()
-                    .putInt(KEY_PIN_FAILED_ATTEMPTS, attempts);
+                    .putInt(KEY_PIN_ATTEMPTS, attempts);
 
             if (attempts >= MAX_PIN_ATTEMPTS) {
-                editor.putLong(
-                        KEY_PIN_LOCKOUT_UNTIL,
-                        now + PIN_LOCKOUT_MILLIS
-                );
-                editor.putInt(KEY_PIN_FAILED_ATTEMPTS, 0);
+                editor.putLong(KEY_PIN_LOCKOUT, now + PIN_LOCKOUT_MILLIS);
+                editor.putInt(KEY_PIN_ATTEMPTS, 0);
             }
 
             editor.apply();
@@ -398,18 +377,11 @@ public class MainActivity extends Activity {
                 byte[] hash = derivePinHash(newPin, salt);
 
                 prefs.edit()
-                        .putString(
-                                KEY_PIN_SALT,
-                                Base64.encodeToString(salt, Base64.NO_WRAP)
-                        )
-                        .putString(
-                                KEY_PIN_HASH,
-                                Base64.encodeToString(hash, Base64.NO_WRAP)
-                        )
-                        .remove(KEY_PIN_FAILED_ATTEMPTS)
-                        .remove(KEY_PIN_LOCKOUT_UNTIL)
+                        .putString(KEY_PIN_SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
+                        .putString(KEY_PIN_HASH, Base64.encodeToString(hash, Base64.NO_WRAP))
+                        .remove(KEY_PIN_ATTEMPTS)
+                        .remove(KEY_PIN_LOCKOUT)
                         .apply();
-
                 return true;
             } catch (GeneralSecurityException e) {
                 return false;
@@ -425,10 +397,9 @@ public class MainActivity extends Activity {
             prefs.edit()
                     .remove(KEY_PIN_SALT)
                     .remove(KEY_PIN_HASH)
-                    .remove(KEY_PIN_FAILED_ATTEMPTS)
-                    .remove(KEY_PIN_LOCKOUT_UNTIL)
+                    .remove(KEY_PIN_ATTEMPTS)
+                    .remove(KEY_PIN_LOCKOUT)
                     .apply();
-
             return true;
         }
 
@@ -447,18 +418,16 @@ public class MainActivity extends Activity {
                 return false;
             }
 
-            String saltString = prefs.getString(KEY_PIN_SALT, "");
-            String hashString = prefs.getString(KEY_PIN_HASH, "");
-
-            if (saltString.isEmpty() || hashString.isEmpty()) {
+            String saltValue = prefs.getString(KEY_PIN_SALT, "");
+            String hashValue = prefs.getString(KEY_PIN_HASH, "");
+            if (saltValue.isEmpty() || hashValue.isEmpty()) {
                 return false;
             }
 
-            byte[] salt = Base64.decode(saltString, Base64.NO_WRAP);
-            byte[] expectedHash = Base64.decode(hashString, Base64.NO_WRAP);
-            byte[] actualHash = derivePinHash(pin, salt);
-
-            return MessageDigest.isEqual(expectedHash, actualHash);
+            byte[] salt = Base64.decode(saltValue, Base64.NO_WRAP);
+            byte[] expected = Base64.decode(hashValue, Base64.NO_WRAP);
+            byte[] actual = derivePinHash(pin, salt);
+            return MessageDigest.isEqual(expected, actual);
         }
 
         private byte[] derivePinHash(String pin, byte[] salt)
@@ -486,12 +455,10 @@ public class MainActivity extends Activity {
 
         private int calculateSampleSize(int width, int height, int maxSize) {
             int sampleSize = 1;
-
             while (width / sampleSize > maxSize ||
                     height / sampleSize > maxSize) {
                 sampleSize *= 2;
             }
-
             return sampleSize;
         }
 
@@ -500,10 +467,33 @@ public class MainActivity extends Activity {
                 return "";
             }
 
+            Bitmap thumbnail = bitmap;
+            int maxDimension = Math.max(bitmap.getWidth(), bitmap.getHeight());
+
+            if (maxDimension > 480) {
+                float scale = 480f / maxDimension;
+                thumbnail = Bitmap.createScaledBitmap(
+                        bitmap,
+                        Math.max(1, Math.round(bitmap.getWidth() * scale)),
+                        Math.max(1, Math.round(bitmap.getHeight() * scale)),
+                        true
+                );
+            }
+
             ByteArrayOutputStream output = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 78, output);
+            thumbnail.compress(Bitmap.CompressFormat.JPEG, 78, output);
+
+            if (thumbnail != bitmap) {
+                thumbnail.recycle();
+            }
 
             return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
+        }
+
+        private void recycle(Bitmap bitmap) {
+            if (bitmap != null && !bitmap.isRecycled()) {
+                bitmap.recycle();
+            }
         }
     }
 }

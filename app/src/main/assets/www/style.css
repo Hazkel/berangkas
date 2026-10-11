@@ -147,12 +147,12 @@ button {
     padding: 12px;
     border: 0;
     border-radius: 8px;
-    color: #fff;
     font-weight: 600;
 }
 
 .primary-btn {
     background: #0284c7;
+    color: #fff;
 }
 
 .primary-btn:active {
@@ -167,6 +167,7 @@ button {
 .danger-btn {
     margin-top: 10px;
     background: #991b1b;
+    color: #fff;
 }
 
 .tip {
@@ -279,18 +280,8 @@ button {
     font-size: 0.75rem;
 }
 
-.thumbnail {
-    display: block;
-    width: 76px;
-    height: 68px;
-    flex: 0 0 76px;
-    border-radius: 6px;
-    background: #0f172a;
-    object-fit: cover;
-}
-
+.thumbnail,
 .video-thumbnail {
-    position: relative;
     display: flex;
     width: 76px;
     height: 68px;
@@ -300,6 +291,11 @@ button {
     overflow: hidden;
     border-radius: 6px;
     background: #0f172a;
+    object-fit: cover;
+}
+
+.video-thumbnail {
+    position: relative;
 }
 
 .video-thumbnail img {
@@ -314,7 +310,6 @@ button {
     border-radius: 6px;
     background: rgb(0 0 0 / 65%);
     color: #fff;
-    font-size: 1rem;
 }
 
 .empty-state {
@@ -413,7 +408,6 @@ button {
 .settings-section h4 {
     margin-bottom: 4px;
     color: #f1f5f9;
-    font-size: 1rem;
 }
 
 .settings-description {
