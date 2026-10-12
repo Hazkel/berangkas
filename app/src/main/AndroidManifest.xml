@@ -4,6 +4,8 @@
     <application
         android:allowBackup="false"
         android:hardwareAccelerated="true"
+        android:icon="@mipmap/logo_berangkas"
+        android:roundIcon="@mipmap/logo_berangkas"
         android:label="Berangkas"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
